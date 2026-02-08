@@ -4,7 +4,7 @@ import { getAvailableSlots, saveAppointment, subscribeToChanges } from '../servi
 import { ServiceType } from '../types';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
-import { Calendar, Clock, User, Phone, CheckCircle, Loader2 } from 'lucide-react';
+import { Calendar, Clock, User, Phone, CheckCircle, Loader2, AlertTriangle } from 'lucide-react';
 
 export const BookingForm: React.FC = () => {
   const [step, setStep] = useState(1);
@@ -15,10 +15,18 @@ export const BookingForm: React.FC = () => {
     date: '',
     time: ''
   });
+  const [phoneError, setPhoneError] = useState('');
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+
+  // Helper to check if it's Sunday
+  const isSunday = (dateString: string) => {
+    if (!dateString) return false;
+    const date = new Date(dateString + 'T12:00:00');
+    return date.getDay() === 0;
+  };
 
   // Update slots when date changes or db changes
   useEffect(() => {
@@ -41,9 +49,37 @@ export const BookingForm: React.FC = () => {
     return unsubscribe;
   }, [formData.date]);
 
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let v = e.target.value.replace(/\D/g, "");
+    
+    // Limit to 11 digits
+    if (v.length > 11) v = v.slice(0, 11);
+    
+    // Apply Mask: (XX) XXXXX-XXXX
+    if (v.length > 2) {
+      v = v.replace(/^(\d{2})(\d)/g, "($1) $2");
+    }
+    if (v.length > 7) {
+      v = v.replace(/(\d)(\d{4})$/, "$1-$2");
+    }
+    
+    setFormData({...formData, phone: v});
+    
+    // Clear error while typing if valid length
+    if (phoneError) setPhoneError('');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name || !formData.phone || !formData.date || !formData.time) return;
+    
+    // Validate Phone
+    const cleanPhone = formData.phone.replace(/\D/g, '');
+    if (cleanPhone.length < 10) {
+      setPhoneError('Por favor, insira um número de telefone válido (com DDD).');
+      return;
+    }
+
+    if (!formData.name || !formData.date || !formData.time) return;
 
     setIsSubmitting(true);
     await saveAppointment({
@@ -58,6 +94,7 @@ export const BookingForm: React.FC = () => {
   };
 
   const today = new Date().toISOString().split('T')[0];
+  const isSelectedDateSunday = isSunday(formData.date);
 
   if (isSuccess) {
     return (
@@ -73,6 +110,7 @@ export const BookingForm: React.FC = () => {
               setIsSuccess(false);
               setStep(1);
               setFormData({ name: '', phone: '', serviceId: 'personalizado', date: '', time: '' });
+              setPhoneError('');
             }}>
               Novo Agendamento
             </Button>
@@ -148,9 +186,14 @@ export const BookingForm: React.FC = () => {
                    <div className="flex items-center gap-2 text-gold-500 p-3">
                      <Loader2 className="w-5 h-5 animate-spin" /> Buscando horários...
                    </div>
+                ) : isSelectedDateSunday ? (
+                   <div className="text-red-400 p-3 bg-red-900/10 rounded-lg border border-red-900/50 flex items-center gap-2">
+                     <AlertTriangle className="w-4 h-4" />
+                     Fechado aos domingos. Selecione outra data.
+                   </div>
                 ) : availableSlots.length === 0 ? (
-                  <div className="text-red-400 p-3 bg-red-900/10 rounded-lg">
-                    Sem horários para esta data.
+                  <div className="text-yellow-400 p-3 bg-yellow-900/10 rounded-lg border border-yellow-900/50">
+                    Agenda cheia ou horário encerrado para hoje.
                   </div>
                 ) : (
                   <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto custom-scrollbar">
@@ -187,7 +230,9 @@ export const BookingForm: React.FC = () => {
                 placeholder="Ex: (11) 99999-9999" 
                 type="tel"
                 value={formData.phone}
-                onChange={e => setFormData({...formData, phone: e.target.value})}
+                onChange={handlePhoneChange}
+                error={phoneError}
+                maxLength={15} // (11) 99999-9999
                 required
               />
             </div>
