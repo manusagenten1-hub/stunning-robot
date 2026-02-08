@@ -63,6 +63,14 @@ export const updateAppointmentStatus = async (id: string, status: Appointment['s
 };
 
 export const getAvailableSlots = async (date: string): Promise<string[]> => {
+  // 1. Validation: Check if it is Sunday
+  // We append T12:00:00 to ensure we check the day in the middle of the day 
+  // to avoid timezone offsets shifting the date to the previous day.
+  const dateObj = new Date(date + 'T12:00:00');
+  if (dateObj.getDay() === 0) {
+    return []; // Closed on Sundays
+  }
+
   // Fetch appointments only for this date to save bandwidth
   const { data, error } = await supabase
     .from('appointments')
@@ -80,7 +88,19 @@ export const getAvailableSlots = async (date: string): Promise<string[]> => {
 
   const slots: string[] = [];
   
+  // 2. Validation: Check if date is today to filter past hours
+  const now = new Date();
+  // Construct "YYYY-MM-DD" for local time
+  const todayStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+  const isToday = date === todayStr;
+  const currentHour = now.getHours();
+
   for (let hour = OPENING_HOUR; hour < CLOSING_HOUR; hour++) {
+    // If it's today, skip hours that have already passed or are the current hour (assuming 1h notice)
+    if (isToday && hour <= currentHour) {
+      continue;
+    }
+
     const timeString = `${hour.toString().padStart(2, '0')}:00`;
     if (!takenTimes.includes(timeString)) {
       slots.push(timeString);
